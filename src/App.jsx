@@ -3,6 +3,7 @@ import {
   ShoppingBag, 
   ChefHat, 
   Plus, 
+  Minus,
   Edit2, 
   Trash2, 
   X, 
@@ -28,7 +29,8 @@ import {
   Layers,
   ExternalLink,
   Store,
-  Filter
+  Filter,
+  LogOut
 } from 'lucide-react';
 
 // Dados reais da empresa coletados do site original
@@ -61,7 +63,16 @@ const INITIAL_PRODUCTS = [
     price: 19.50,
     category: 'Frango',
     image: 'https://images.unsplash.com/photo-1604908177453-7462950a6a3b?auto=format&fit=crop&w=800&q=80',
-    available: true
+    available: true,
+    ingredients: 'Peito de frango, batata doce, brócolis, cenoura, azeite de oliva, sal, alho, ervas finas.',
+    calories: '404kcal',
+    carbs: '48g',
+    proteins: '46g',
+    totalFats: '4g',
+    saturatedFats: '0g',
+    transFats: '0g',
+    fiber: '8g',
+    sodium: '400mg'
   },
   {
     id: 2,
@@ -193,7 +204,29 @@ export default function App() {
 
   const [products, setProducts] = useState(() => {
     const stored = localStorage.getItem('cleanfood_products');
-    return stored ? JSON.parse(stored) : INITIAL_PRODUCTS;
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return parsed.map(sp => {
+        const initial = INITIAL_PRODUCTS.find(ip => ip.id === sp.id);
+        if (initial) {
+          return {
+            ...initial,
+            ...sp,
+            ingredients: sp.ingredients || initial.ingredients || '',
+            calories: sp.calories || initial.calories || '',
+            carbs: sp.carbs || initial.carbs || '',
+            proteins: sp.proteins || initial.proteins || '',
+            totalFats: sp.totalFats || initial.totalFats || '',
+            saturatedFats: sp.saturatedFats || initial.saturatedFats || '',
+            transFats: sp.transFats || initial.transFats || '',
+            fiber: sp.fiber || initial.fiber || '',
+            sodium: sp.sodium || initial.sodium || ''
+          };
+        }
+        return sp;
+      });
+    }
+    return INITIAL_PRODUCTS;
   });
 
   const [categories, setCategories] = useState(() => {
@@ -225,6 +258,41 @@ export default function App() {
 
   // --- Estados da Vitrine ---
   const [activeCategory, setActiveCategory] = useState('Todos');
+  const [storeSearchTerm, setStoreSearchTerm] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [isNavbarScrolled, setIsNavbarScrolled] = useState(false);
+
+  const [showLoader, setShowLoader] = useState(true);
+  const [fadeLoader, setFadeLoader] = useState(false);
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => sessionStorage.getItem('cleanfood_admin_logged') === 'true');
+
+  useEffect(() => {
+    const fadeTimer = setTimeout(() => {
+      setFadeLoader(true);
+    }, 1500);
+
+    const removeTimer = setTimeout(() => {
+      setShowLoader(false);
+    }, 2000);
+
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(removeTimer);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 20) {
+        setIsNavbarScrolled(true);
+      } else {
+        setIsNavbarScrolled(false);
+      }
+    };
+    handleScroll();
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // --- Estados do Painel Admin (Filtros e Edição) ---
   const [searchTerm, setSearchTerm] = useState('');
@@ -299,10 +367,10 @@ export default function App() {
     setCart(prev => prev.map(item => {
       if (item.id === productId) {
         const newQuantity = item.quantity + delta;
-        return newQuantity > 0 ? { ...item, quantity: newQuantity } : item;
+        return { ...item, quantity: newQuantity };
       }
       return item;
-    }));
+    }).filter(item => item.quantity > 0));
   };
 
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -382,7 +450,16 @@ export default function App() {
       price: parseFloat(formData.get('price')),
       category: formData.get('category'),
       image: formData.get('image') || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80',
-      available: formData.get('available') === 'on'
+      available: formData.get('available') === 'on',
+      ingredients: formData.get('ingredients') || '',
+      calories: formData.get('calories') || '',
+      carbs: formData.get('carbs') || '',
+      proteins: formData.get('proteins') || '',
+      totalFats: formData.get('totalFats') || '',
+      saturatedFats: formData.get('saturatedFats') || '',
+      transFats: formData.get('transFats') || '',
+      fiber: formData.get('fiber') || '',
+      sodium: formData.get('sodium') || ''
     };
 
     if (isEditing) {
@@ -503,9 +580,14 @@ export default function App() {
 
   // --- RENDERIZAR VITRINE (STOREFRONT) ---
   const renderStorefront = () => {
-    const filteredProducts = activeCategory === 'Todos'
-      ? products.filter(p => p.available)
-      : products.filter(p => p.category === activeCategory && p.available);
+    const filteredProducts = products.filter(p => {
+      if (!p.available) return false;
+      const matchCategory = activeCategory === 'Todos' || p.category === activeCategory;
+      const matchSearch = storeSearchTerm.trim() === '' || 
+                          p.name.toLowerCase().includes(storeSearchTerm.toLowerCase()) ||
+                          p.description.toLowerCase().includes(storeSearchTerm.toLowerCase());
+      return matchCategory && matchSearch;
+    });
 
     const categoryEmojis = {
       'Todos': '🍽️',
@@ -520,45 +602,33 @@ export default function App() {
       <div key={view} className="min-h-screen" style={{ background: '#fff', color: '#0a0a0a' }}>
 
         {/* ====== NAVBAR ====== */}
-        <header className="sticky top-0 z-40 nav-light">
-          <div className="max-w-7xl mx-auto px-6 flex items-center justify-between" style={{ height: '68px' }}>
+        <header className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 ${isNavbarScrolled ? 'nav-light shadow-sm' : 'bg-transparent border-transparent'}`} style={!isNavbarScrolled ? { borderBottom: 'none', backdropFilter: 'none' } : {}}>
+          <div className="max-w-7xl mx-auto px-8 sm:px-12 md:px-16 lg:px-20 xl:px-8 flex items-center justify-between" style={{ height: '80px' }}>
             {/* Logo */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5 sm:gap-3">
               <img 
                 src="/logo.jpg" 
                 alt="Clean Foods Logo" 
-                className="w-10 h-10 rounded-full object-cover"
+                className="w-11 h-11 sm:w-14 sm:h-14 rounded-full object-cover shrink-0"
                 style={{ border: '2px solid #fbbf24', boxShadow: '0 0 0 3px rgba(251,191,36,0.15)' }}
               />
-              <div className="hidden sm:block">
-                <div className="font-black text-sm leading-tight text-black tracking-tight">Clean Foods</div>
-                <div className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#f59e0b' }}>São Paulo</div>
+              <div className="flex flex-col">
+                <div className="font-black text-lg sm:text-2xl leading-none text-black tracking-tight font-display">Clean Foods</div>
+                <div className="text-[10px] sm:text-sm font-black uppercase tracking-widest font-display" style={{ color: '#f59e0b', marginTop: '1px' }}>São Paulo</div>
               </div>
             </div>
 
-            {/* Center nav */}
-            <nav className="hidden md:flex items-center gap-1 rounded-full px-1.5 py-1.5" style={{ background: '#f5f5f5' }}>
-              {['Todos', ...categories].slice(0, 5).map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-200 ${activeCategory === cat
-                    ? 'bg-black text-white shadow-sm'
-                    : 'text-stone-500 hover:text-black hover:bg-white'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </nav>
+
 
             {/* Right actions */}
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setView('admin')}
-                className="hidden md:flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold text-stone-500 hover:text-black transition-all"
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-full text-xs font-bold text-stone-500 hover:text-black hover:bg-stone-50 transition-all"
+                title="Acessar Painel Administrador"
               >
-                <ChefHat className="w-3.5 h-3.5" /> Admin
+                <ChefHat className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Admin</span>
               </button>
               <button
                 onClick={() => setIsCartOpen(true)}
@@ -572,132 +642,86 @@ export default function App() {
                   </span>
                 )}
               </button>
+              {cart.length > 0 && (
+                <button
+                  onClick={() => setIsCheckoutOpen(true)}
+                  className="hidden sm:flex items-center gap-1.5 px-5 py-2.5 rounded-full text-xs font-black bg-stone-900 text-white hover:bg-stone-850 hover:scale-105 active:scale-95 transition-all shadow-md"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-yellow-450" /> Finalizar Compra
+                </button>
+              )}
             </div>
           </div>
         </header>
 
         {/* ====== HERO ====== */}
-        <section className="relative overflow-hidden" style={{ background: '#FDF0A6', minHeight: '88vh', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <section className="relative overflow-hidden pt-[96px] pb-10 md:pb-14" style={{ background: '#FDF0A6' }}>
           {/* Subtle dot grid */}
-          <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(rgba(180,140,0,0.07) 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
+          <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(rgba(180,140,0,0.06) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
           {/* Soft yellow radial center glow */}
-          <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse 70% 60% at 30% 50%, rgba(251,191,36,0.08) 0%, transparent 70%)' }} />
+          <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse 60% 50% at 50% 50%, rgba(251,191,36,0.06) 0%, transparent 75%)' }} />
 
-          <div className="relative z-10 max-w-7xl mx-auto px-6 py-20 w-full">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-
-              {/* Left: content */}
-              <div>
-                {/* Status badge */}
-                <div className="inline-flex items-center gap-2 mb-8 animate-fade-in-up opacity-0-init" style={{ animationFillMode: 'forwards' }}>
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-full hero-pill">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: '#fbbf24' }}></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: '#fbbf24' }}></span>
-                    </span>
-                    <span className="text-xs font-bold text-black">Aberto Agora</span>
-                    <span className="text-stone-300 text-xs">·</span>
-                    <span className="text-xs font-semibold text-stone-500">{STORE_INFO.hours}</span>
-                  </div>
-                </div>
-
-                {/* Headline */}
-                <h1 className="font-black mb-6 animate-fade-in-up delay-100 opacity-0-init"
-                  style={{ fontSize: 'clamp(2.6rem, 6vw, 4.8rem)', animationFillMode: 'forwards', color: '#0a0a0a', letterSpacing: '-0.04em', lineHeight: 1.05 }}>
-                  {storeSettings.heroTitle.split(',').map((part, i) => (
-                    <span key={i}>
-                      {i === 1
-                        ? <><br /><span className="text-highlight-yellow">{part.trim()}</span></>  
-                        : part}
-                      {i === 0 && ','}
-                    </span>
-                  ))}
-                </h1>
-
-                <p className="text-base md:text-lg leading-relaxed mb-10 max-w-md animate-fade-in-up delay-200 opacity-0-init"
-                  style={{ color: '#666', animationFillMode: 'forwards' }}>
-                  {storeSettings.heroSubtitle}
-                </p>
-
-                {/* CTAs */}
-                <div className="flex flex-wrap gap-3 mb-14 animate-fade-in-up delay-300 opacity-0-init" style={{ animationFillMode: 'forwards' }}>
-                  <button
-                    onClick={() => { document.getElementById('menu-section')?.scrollIntoView({ behavior: 'smooth' }); }}
-                    className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full text-sm font-black btn-yellow"
-                  >
-                    <ShoppingBag className="w-4 h-4" /> Ver o Cardápio
-                  </button>
-                  <a
-                    href={`https://wa.me/${STORE_INFO.whatsapp}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full text-sm font-bold btn-outline-dark"
-                  >
-                    <Phone className="w-4 h-4" /> WhatsApp
-                  </a>
-                </div>
-
-                {/* Stats row */}
-                <div className="flex flex-wrap gap-10 animate-fade-in-up delay-400 opacity-0-init" style={{ animationFillMode: 'forwards' }}>
-                  {[
-                    { value: '14+', label: 'Pratos' },
-                    { value: '100%', label: 'Natural' },
-                    { value: 'Zero', label: 'Lactose' },
-                  ].map((stat) => (
-                    <div key={stat.label}>
-                      <div className="font-black" style={{ fontSize: '2rem', lineHeight: 1, color: '#0a0a0a' }}>{stat.value}</div>
-                      <div className="text-xs mt-1 font-bold uppercase tracking-widest" style={{ color: '#aaa' }}>{stat.label}</div>
-                    </div>
-                  ))}
-                </div>
+          <div className="relative z-10 max-w-4xl mx-auto px-8 sm:px-12 md:px-16 text-center">
+            {/* Status badge */}
+            <div className="inline-flex items-center gap-2 mb-4 animate-fade-in-up opacity-0-init" style={{ animationFillMode: 'forwards' }}>
+              <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-stone-200 shadow-sm">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-650" style={{ color: '#059669' }}>Aberto Agora</span>
+                <span className="text-stone-300 text-xs font-black">·</span>
+                <span className="text-[10px] font-black text-stone-600 tracking-wide">{STORE_INFO.hours}</span>
               </div>
+            </div>
 
-              {/* Right: image collage */}
-              <div className="relative hidden lg:block animate-fade-in-up delay-200 opacity-0-init" style={{ animationFillMode: 'forwards' }}>
-                <div className="relative">
-                  {/* Main image */}
-                  <div className="rounded-3xl overflow-hidden" style={{ height: '420px', boxShadow: '0 32px 80px rgba(0,0,0,0.12)' }}>
-                    <img
-                      src="https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80"
-                      alt="Prato saudável Clean Foods"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  {/* Floating badge */}
-                  <div className="absolute -bottom-6 -left-6 hero-pill rounded-2xl p-4" style={{ background: '#fff', boxShadow: '0 8px 32px rgba(0,0,0,0.1)' }}>
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center btn-yellow">
-                        <Leaf className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-black text-black">100% Natural</div>
-                        <div className="text-[10px] text-stone-400 font-semibold">Sem conservantes</div>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Top tag */}
-                  <div className="absolute -top-4 -right-4 rounded-2xl px-4 py-2.5" style={{ background: '#0a0a0a', boxShadow: '0 8px 24px rgba(0,0,0,0.15)' }}>
-                    <div className="text-xs font-black" style={{ color: '#fbbf24' }}>Avenida Nazaré 683, sala 13, Ipiranga, São Paulo, SP</div>
-                  </div>
-                </div>
-              </div>
+            {/* Headline */}
+            <h1 className="font-black mb-3.5 animate-fade-in-up delay-100 opacity-0-init"
+              style={{ fontSize: 'clamp(1.6rem, 3.5vw, 2.6rem)', animationFillMode: 'forwards', color: '#0a0a0a', letterSpacing: '-0.03em', lineHeight: 1.1 }}>
+              {storeSettings.heroTitle.split(',').map((part, i) => (
+                <span key={i} className={i === 1 ? "text-highlight-yellow mx-1" : ""}>
+                  {part.trim()}
+                  {i === 0 && ', '}
+                </span>
+              ))}
+            </h1>
 
+            {/* Subtitle */}
+            <p className="text-xs sm:text-sm leading-relaxed mb-6 max-w-xl mx-auto animate-fade-in-up delay-200 opacity-0-init"
+              style={{ color: '#666', animationFillMode: 'forwards' }}>
+              {storeSettings.heroSubtitle}
+            </p>
+
+            {/* CTAs */}
+            <div className="flex justify-center gap-3 animate-fade-in-up delay-300 opacity-0-init" style={{ animationFillMode: 'forwards' }}>
+              <button
+                onClick={() => { document.getElementById('menu-section')?.scrollIntoView({ behavior: 'smooth' }); }}
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full text-xs font-black btn-yellow shadow-sm hover:scale-105 active:scale-95 transition-all"
+              >
+                <ShoppingBag className="w-3.5 h-3.5" /> Ver o Cardápio
+              </button>
+              <a
+                href={`https://wa.me/${STORE_INFO.whatsapp}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full text-xs font-bold btn-outline-dark hover:scale-105 active:scale-95 transition-all"
+              >
+                <Phone className="w-3.5 h-3.5" /> WhatsApp
+              </a>
             </div>
           </div>
-
-
         </section>
 
         {/* ====== MENU SECTION ====== */}
-        <section id="menu-section" className="py-20 px-6" style={{ background: '#f7f7f7' }}>
+        <section id="menu-section" className="py-20 px-8 sm:px-12 md:px-16 lg:px-20 xl:px-8" style={{ background: '#f7f7f7' }}>
           <div className="max-w-7xl mx-auto">
 
             {/* Section header */}
             <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-10 gap-4">
               <div>
                 <span className="yellow-tag mb-3 inline-block">Nosso Cardápio</span>
-                <h2 className="font-black" style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#0a0a0a', lineHeight: 1.1, letterSpacing: '-0.03em' }}>
+                <h2 className="font-black font-display" style={{ fontSize: 'clamp(2rem, 4vw, 2.8rem)', color: '#0a0a0a', lineHeight: 1.1, letterSpacing: '0.01em' }}>
                   Escolha o seu favorito
                 </h2>
               </div>
@@ -706,37 +730,74 @@ export default function App() {
               </div>
             </div>
 
-            {/* Category pills */}
-            <div className="flex overflow-x-auto pb-4 hide-scrollbar gap-2 mb-8 select-none">
-              {['Todos', ...categories].map(category => (
-                <button
-                  key={category}
-                  onClick={() => setActiveCategory(category)}
-                  className={`cat-pill whitespace-nowrap flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all duration-200 ${
-                    activeCategory === category ? 'cat-pill-active' : ''
-                  }`}
-                >
-                  <span>{categoryEmojis[category] || '🍴'}</span>
-                  {category}
-                </button>
-              ))}
+            {/* Category pills & Search Bar */}
+            <div className="flex flex-col md:flex-row gap-4 justify-between items-center mb-8">
+              {/* Category pills */}
+              <div className="flex overflow-x-auto pb-1 md:pb-0 hide-scrollbar select-none w-full md:w-auto justify-start">
+                <nav className="flex items-center gap-1.5 rounded-full px-2 py-1.5 shrink-0" style={{ background: '#f5f5f5' }}>
+                  <img 
+                    src="/logo.jpg" 
+                    alt="Clean Foods Logo" 
+                    className="w-7 h-7 rounded-full object-cover shrink-0 ml-0.5"
+                    style={{ border: '1.5px solid #fbbf24', boxShadow: '0 0 0 2px rgba(251,191,36,0.1)' }}
+                  />
+                  {['Todos', ...categories].map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setActiveCategory(cat)}
+                      className={`px-4 py-1.5 rounded-full text-[11px] sm:text-xs transition-all duration-200 font-display whitespace-nowrap ${activeCategory === cat
+                        ? 'bg-yellow-400 text-black shadow-sm font-bold'
+                        : 'text-stone-500 hover:text-black hover:bg-white'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </nav>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative w-full md:w-64">
+                <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input 
+                  type="text" 
+                  value={storeSearchTerm}
+                  onChange={(e) => setStoreSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-10 py-2 text-xs border border-stone-200 rounded-full outline-none focus:border-yellow-400 transition-all bg-white text-stone-850" 
+                  placeholder="Buscar pratos por nome..." 
+                  style={{ height: '36px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}
+                />
+                {storeSearchTerm && (
+                  <button 
+                    onClick={() => setStoreSearchTerm('')} 
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-black"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Product Grid */}
             {filteredProducts.length === 0 ? (
-              <div className="text-center py-24 rounded-3xl bg-white">
+              <div className="text-center py-24 rounded-3xl bg-white border border-stone-100">
                 <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ background: '#f5f5f5' }}>
-                  <ShoppingBag className="w-8 h-8" style={{ color: '#ccc' }} />
+                  <Search className="w-8 h-8 text-stone-300" />
                 </div>
-                <h3 className="text-lg font-bold text-black mb-1">Nenhum prato disponível</h3>
-                <p className="text-sm text-stone-400 max-w-xs mx-auto">Não há pratos disponíveis nesta categoria no momento.</p>
+                <h3 className="text-lg font-bold text-black mb-1">Nenhum prato encontrado</h3>
+                <p className="text-sm text-stone-400 max-w-xs mx-auto">
+                  {storeSearchTerm 
+                    ? `Não encontramos pratos para "${storeSearchTerm}". Tente outro termo.` 
+                    : 'Não há pratos disponíveis nesta categoria no momento.'}
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredProducts.map((product, idx) => (
                   <div
                     key={product.id}
-                    className="product-card rounded-2xl overflow-hidden flex flex-col animate-fade-in-up opacity-0-init"
+                    onClick={() => setSelectedProduct(product)}
+                    className="product-card rounded-2xl overflow-hidden flex flex-col cursor-pointer animate-fade-in-up opacity-0-init"
                     style={{ animationDelay: `${idx * 50}ms`, animationFillMode: 'forwards' }}
                   >
                     {/* Image */}
@@ -765,7 +826,10 @@ export default function App() {
                       {/* Add quick btn */}
                       <div className="absolute bottom-3 right-3">
                         <button
-                          onClick={() => addToCart(product)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addToCart(product);
+                          }}
                           className="w-9 h-9 rounded-xl flex items-center justify-center btn-yellow shadow-lg"
                         >
                           <Plus className="w-4 h-4" />
@@ -784,7 +848,10 @@ export default function App() {
 
                       {/* CTA */}
                       <button
-                        onClick={() => addToCart(product)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addToCart(product);
+                        }}
                         className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-black btn-dark mt-auto"
                       >
                         <Plus className="w-3 h-3" /> Adicionar
@@ -798,11 +865,11 @@ export default function App() {
         </section>
 
         {/* ====== INFO CARDS ====== */}
-        <section className="py-20 px-6 relative overflow-hidden" style={{ background: '#fff' }}>
+        <section className="py-20 px-8 sm:px-12 md:px-16 lg:px-20 xl:px-8 relative overflow-hidden" style={{ background: '#fff' }}>
           <div className="max-w-7xl mx-auto relative z-10">
             <div className="text-center mb-12">
               <span className="yellow-tag mb-4 inline-block">Onde Nos Encontrar</span>
-              <h2 className="font-black" style={{ fontSize: 'clamp(1.8rem, 4vw, 2.5rem)', color: '#0a0a0a', letterSpacing: '-0.03em' }}>
+              <h2 className="font-black font-display" style={{ fontSize: 'clamp(1.8rem, 4vw, 2.5rem)', color: '#0a0a0a', letterSpacing: '0.01em' }}>
                 Informações da Loja
               </h2>
             </div>
@@ -813,15 +880,15 @@ export default function App() {
                 <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 btn-yellow">
                   <ClockIcon className="w-5 h-5" />
                 </div>
-                <h4 className="font-black mb-3 text-black text-base">Horários</h4>
+                <h4 className="font-black font-display mb-3 text-black text-base" style={{ letterSpacing: '0.02em' }}>Horários</h4>
                 {STORE_INFO.hoursDetail.map(h => (
                   <div key={h.day} className="flex justify-between text-sm mb-2">
                     <span style={{ color: '#888' }}>{h.day}</span>
                     <span className="font-bold text-black">{h.time}</span>
                   </div>
                 ))}
-                <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: '#fef9c3', color: '#92400e', border: '1.5px solid #fde68a' }}>
-                  <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: '#fbbf24' }}></span><span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ background: '#f59e0b' }}></span></span>
+                <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-black uppercase tracking-wider" style={{ background: '#ecfdf5', color: '#047857', border: '1.5px solid #a7f3d0' }}>
+                  <span className="relative flex h-1.5 w-1.5"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span></span>
                   Aberto Agora
                 </div>
               </div>
@@ -831,7 +898,7 @@ export default function App() {
                 <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 btn-yellow">
                   <MapPin className="w-5 h-5" />
                 </div>
-                <h4 className="font-black mb-3 text-black text-base">Localização</h4>
+                <h4 className="font-black font-display mb-3 text-black text-base" style={{ letterSpacing: '0.02em' }}>Localização</h4>
                 <p className="text-sm leading-relaxed mb-4" style={{ color: '#666' }}>{STORE_INFO.address}</p>
                 <a
                   href={STORE_INFO.mapsUrl}
@@ -848,7 +915,7 @@ export default function App() {
                 <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 btn-yellow">
                   <CreditCard className="w-5 h-5" />
                 </div>
-                <h4 className="font-black mb-3 text-black text-base">Pagamentos</h4>
+                <h4 className="font-black font-display mb-3 text-black text-base" style={{ letterSpacing: '0.02em' }}>Pagamentos</h4>
                 <div className="flex flex-wrap gap-2 mb-3">
                   {STORE_INFO.paymentMethods.map(pm => (
                     <span key={pm} className="px-3 py-1.5 rounded-lg text-xs font-bold" style={{ background: '#f5f5f5', color: '#333', border: '1px solid #e5e5e5' }}>
@@ -864,7 +931,7 @@ export default function App() {
 
         {/* ====== FOOTER ====== */}
         <footer style={{ background: '#0a0a0a' }}>
-          <div className="max-w-7xl mx-auto px-6 pt-16 pb-8">
+          <div className="max-w-7xl mx-auto px-8 sm:px-12 md:px-16 lg:px-20 xl:px-8 pt-16 pb-8">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-12 pb-12" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
 
               {/* Brand */}
@@ -948,13 +1015,31 @@ export default function App() {
           </div>
         </footer>
 
-        {/* ====== FLOATING MOBILE ADMIN ====== */}
-        <button
-          onClick={() => setView('admin')}
-          className="md:hidden fixed bottom-6 right-6 z-40 w-14 h-14 rounded-2xl flex items-center justify-center btn-yellow shadow-2xl transition-all hover:scale-110 active:scale-95"
-        >
-          <Settings className="w-6 h-6" />
-        </button>
+        {/* ====== FLOATING CHECKOUT BAR ====== */}
+        {cart.length > 0 && !isCartOpen && !isCheckoutOpen && view === 'store' && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[90%] max-w-lg bg-stone-950/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl flex items-center justify-between border border-stone-800 animate-fade-in">
+            <div className="flex flex-col pl-2">
+              <span className="text-[10px] uppercase tracking-widest text-stone-400 font-bold">Seu Carrinho</span>
+              <span className="text-sm font-black text-yellow-450">
+                {cart.reduce((a, i) => a + i.quantity, 0)} {cart.reduce((a, i) => a + i.quantity, 0) === 1 ? 'item' : 'itens'} · {formatPrice(cartTotal)}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setIsCartOpen(true)} 
+                className="px-4 py-2.5 rounded-2xl text-xs font-bold text-stone-300 hover:text-white hover:bg-stone-900 transition-colors border border-stone-850"
+              >
+                Ver Carrinho
+              </button>
+              <button 
+                onClick={() => setIsCheckoutOpen(true)} 
+                className="px-5 py-2.5 rounded-2xl text-xs font-black bg-yellow-400 text-black hover:bg-yellow-500 hover:scale-105 active:scale-95 transition-all shadow-md flex items-center gap-1"
+              >
+                Finalizar Compra →
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ====== CART DRAWER ====== */}
         {isCartOpen && (
@@ -991,14 +1076,24 @@ export default function App() {
                         <p className="text-sm font-bold text-black leading-tight line-clamp-2 mb-0.5">{item.name}</p>
                         <p className="font-black text-sm text-black">{formatPrice(item.price * item.quantity)}</p>
                       </div>
-                      <div className="flex flex-col items-center gap-1.5">
-                        <button onClick={() => updateQuantity(item.id, 1)} className="w-7 h-7 rounded-lg flex items-center justify-center text-stone-600 hover:bg-stone-200 transition-colors border border-stone-200">
-                          <Plus className="w-3 h-3" />
-                        </button>
-                        <span className="text-sm font-black text-black">{item.quantity}</span>
-                        <button onClick={() => updateQuantity(item.id, -1)} className="w-7 h-7 rounded-lg flex items-center justify-center text-stone-500 hover:bg-red-50 hover:text-red-500 transition-colors border border-stone-200">
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                      <div className="flex items-center self-center">
+                        <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-xl p-1 shadow-sm">
+                          <button 
+                            onClick={() => updateQuantity(item.id, -1)} 
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-stone-500 hover:bg-stone-50 hover:text-rose-650 transition-colors"
+                            title={item.quantity === 1 ? "Remover do Carrinho" : "Diminuir quantidade"}
+                          >
+                            {item.quantity > 1 ? <Minus className="w-3.5 h-3.5" /> : <Trash2 className="w-3.5 h-3.5 text-rose-500" />}
+                          </button>
+                          <span className="text-xs font-black text-black px-1.5 min-w-[18px] text-center">{item.quantity}</span>
+                          <button 
+                            onClick={() => updateQuantity(item.id, 1)} 
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-stone-600 hover:bg-stone-50 transition-colors"
+                            title="Aumentar quantidade"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))
@@ -1015,7 +1110,7 @@ export default function App() {
                     onClick={() => { setIsCartOpen(false); setIsCheckoutOpen(true); }}
                     className="w-full py-3.5 rounded-2xl font-black text-sm flex items-center justify-center gap-2 btn-yellow"
                   >
-                    Finalizar Pedido <CheckCircle2 className="w-5 h-5" />
+                    Finalizar Compra <CheckCircle2 className="w-5 h-5" />
                   </button>
                 </div>
               )}
@@ -1157,9 +1252,128 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {selectedProduct && (
+          <div 
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto" 
+            style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)' }}
+            onClick={() => setSelectedProduct(null)}
+          >
+            <div 
+              className="bg-white rounded-3xl max-w-3xl w-full overflow-hidden shadow-2xl animate-scale-in my-8 max-h-[95vh] sm:max-h-[90vh] flex flex-col"
+              style={{ border: '1px solid #f0f0f0' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="p-5 flex items-center justify-between border-b border-stone-100 flex-shrink-0">
+                <span className="yellow-tag">Detalhes do Produto</span>
+                <button 
+                  onClick={() => setSelectedProduct(null)} 
+                  className="p-2 rounded-xl text-stone-400 hover:text-black hover:bg-stone-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Content body - scrollable */}
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Left Column: Image and Main Info */}
+                  <div className="space-y-4">
+                    <div className="rounded-2xl overflow-hidden aspect-video md:aspect-square bg-stone-100 border border-stone-200">
+                      <img 
+                        src={selectedProduct.image} 
+                        alt={selectedProduct.name} 
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-wider text-amber-600">
+                        {categoryEmojis[selectedProduct.category] || '🍴'} {selectedProduct.category}
+                      </span>
+                      <h3 className="text-xl font-black text-black tracking-tight font-display mt-1">
+                        {selectedProduct.name}
+                      </h3>
+                      <p className="text-lg font-black text-amber-600 mt-2">
+                        {formatPrice(selectedProduct.price)}
+                      </p>
+                      <p className="text-xs text-stone-500 mt-4 leading-relaxed whitespace-pre-line">
+                        {selectedProduct.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Ingredients & Nutritional Table */}
+                  <div className="space-y-6">
+                    {/* Ingredients Section */}
+                    <div className="bg-stone-50 p-4 rounded-2xl border border-stone-150">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-black font-display mb-2 flex items-center gap-1.5">
+                        <Leaf className="w-4 h-4 text-emerald-605" style={{ color: '#059669' }} /> Ingredientes
+                      </h4>
+                      <p className="text-xs text-stone-700 leading-relaxed">
+                        {selectedProduct.ingredients || 'Ingredientes não declarados.'}
+                      </p>
+                    </div>
+
+                    {/* Nutritional Table Section */}
+                    <div className="bg-stone-50 p-4 rounded-2xl border border-stone-150">
+                      <h4 className="text-xs font-black uppercase tracking-wider text-black font-display mb-3 flex items-center gap-1.5">
+                        <BarChart3 className="w-4 h-4 text-amber-600" /> Tabela Nutricional
+                      </h4>
+                      <div className="border border-stone-200 rounded-xl overflow-hidden">
+                        {[
+                          { label: 'Valor Energético', value: selectedProduct.calories },
+                          { label: 'Carboidratos', value: selectedProduct.carbs },
+                          { label: 'Proteínas', value: selectedProduct.proteins },
+                          { label: 'Gorduras Totais', value: selectedProduct.totalFats },
+                          { label: 'Gordura Saturada', value: selectedProduct.saturatedFats },
+                          { label: 'Gordura Trans', value: selectedProduct.transFats },
+                          { label: 'Fibra Alimentar', value: selectedProduct.fiber },
+                          { label: 'Sódio', value: selectedProduct.sodium },
+                        ].map((row, i) => (
+                          <div 
+                            key={row.label} 
+                            className={`flex justify-between items-center px-3.5 py-2 text-xs border-b border-stone-200 last:border-0 ${
+                              i % 2 === 0 ? 'bg-white' : 'bg-stone-50/50'
+                            }`}
+                          >
+                            <span className="font-medium text-stone-500">{row.label}</span>
+                            <span className="font-bold text-black">{row.value || 'Não informado'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="p-5 border-t border-stone-100 bg-stone-50/50 flex flex-col-reverse sm:flex-row gap-3 flex-shrink-0">
+                <button 
+                  type="button" 
+                  onClick={() => setSelectedProduct(null)} 
+                  className="w-full sm:w-auto px-5 py-3 border border-stone-300 text-stone-600 font-semibold rounded-xl hover:bg-stone-100 transition-colors text-sm text-center"
+                >
+                  Voltar ao Cardápio
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    addToCart(selectedProduct);
+                    setSelectedProduct(null);
+                  }} 
+                  className="flex-grow py-3 px-6 rounded-xl font-black text-sm flex items-center justify-center gap-2 btn-yellow shadow-md"
+                >
+                  Adicionar ao Carrinho <ShoppingBag className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
+
   // --- RENDERIZAR PAINEL ADMINISTRATIVO ---
   const renderAdminPanel = () => {
     const stats = dashboardStats();
@@ -1246,20 +1460,22 @@ export default function App() {
             >
               <Tag className="w-4 h-4" /> Categorias
             </button>
-            <button 
-              onClick={() => setAdminTab('settings')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                adminTab === 'settings' 
-                  ? 'bg-yellow-400 text-white shadow-md' 
-                  : 'hover:bg-stone-800 hover:text-white'
-              }`}
-            >
-              <Settings className="w-4 h-4" /> Configurações
-            </button>
+
           </nav>
 
           {/* Rodapé da Sidebar */}
-          <div className="p-4 border-t border-stone-800 bg-stone-950/40">
+          <div className="p-4 border-t border-stone-800 bg-stone-950/40 space-y-2">
+            <button 
+              onClick={() => {
+                setIsAdminLoggedIn(false);
+                sessionStorage.removeItem('cleanfood_admin_logged');
+                triggerToast('Sessão encerrada com sucesso.');
+                setView('store');
+              }}
+              className="w-full flex items-center justify-center gap-2 text-xs font-bold bg-stone-800 hover:bg-stone-750 text-rose-500 hover:text-rose-400 py-3 rounded-xl transition-colors"
+            >
+              <LogOut className="w-4 h-4" /> Encerrar Sessão
+            </button>
             <button 
               onClick={() => setView('store')}
               className="w-full flex items-center justify-center gap-2 text-xs font-bold bg-stone-850 hover:bg-stone-800 text-yellow-400 hover:text-yellow-300 py-3 rounded-xl transition-colors"
@@ -1279,8 +1495,7 @@ export default function App() {
                 {adminTab === 'dashboard' ? 'Dashboard e Métricas' :
                  adminTab === 'menu' ? 'Gerenciamento do Cardápio' :
                  adminTab === 'orders' ? 'Controle de Pedidos' :
-                 adminTab === 'categories' ? 'Categorias de Produtos' :
-                 adminTab === 'settings' ? 'Configurações do Restaurante' : ''}
+                 adminTab === 'categories' ? 'Categorias de Produtos' : ''}
               </h1>
             </div>
             {adminTab === 'menu' && (
@@ -1549,9 +1764,53 @@ export default function App() {
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Descrição / Ingredientes</label>
-                        <textarea required name="description" defaultValue={currentProduct?.description} rows="3" className="w-full p-3 text-sm border border-stone-300 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none resize-none bg-white" placeholder="Descreva os ingredientes e detalhes do prato..."></textarea>
+                        <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Descrição do Prato</label>
+                        <textarea required name="description" defaultValue={currentProduct?.description} rows="3" className="w-full p-3 text-sm border border-stone-300 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none resize-none bg-white" placeholder="Descreva os detalhes do prato..."></textarea>
                       </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Ingredientes</label>
+                        <textarea name="ingredients" defaultValue={currentProduct?.ingredients} rows="2" className="w-full p-3 text-sm border border-stone-300 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none resize-none bg-white" placeholder="Ex: Peito de frango, batata doce, legumes, sal, azeite..."></textarea>
+                      </div>
+
+                      <div className="border-t border-stone-105 pt-3">
+                        <span className="block text-xs font-bold text-stone-600 uppercase mb-2">Informação Nutricional</span>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Val. Energético</label>
+                            <input name="calories" type="text" defaultValue={currentProduct?.calories} className="w-full p-2 text-xs border border-stone-300 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none bg-white" placeholder="Ex: 404kcal" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Carboidratos</label>
+                            <input name="carbs" type="text" defaultValue={currentProduct?.carbs} className="w-full p-2 text-xs border border-stone-300 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none bg-white" placeholder="Ex: 48g" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Proteínas</label>
+                            <input name="proteins" type="text" defaultValue={currentProduct?.proteins} className="w-full p-2 text-xs border border-stone-300 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none bg-white" placeholder="Ex: 46g" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Gord. Totais</label>
+                            <input name="totalFats" type="text" defaultValue={currentProduct?.totalFats} className="w-full p-2 text-xs border border-stone-300 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none bg-white" placeholder="Ex: 4g" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Gord. Saturada</label>
+                            <input name="saturatedFats" type="text" defaultValue={currentProduct?.saturatedFats} className="w-full p-2 text-xs border border-stone-300 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none bg-white" placeholder="Ex: 0g" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Gord. Trans</label>
+                            <input name="transFats" type="text" defaultValue={currentProduct?.transFats} className="w-full p-2 text-xs border border-stone-300 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none bg-white" placeholder="Ex: 0g" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Fibra Alim.</label>
+                            <input name="fiber" type="text" defaultValue={currentProduct?.fiber} className="w-full p-2 text-xs border border-stone-300 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none bg-white" placeholder="Ex: 8g" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Sódio</label>
+                            <input name="sodium" type="text" defaultValue={currentProduct?.sodium} className="w-full p-2 text-xs border border-stone-300 rounded-xl focus:ring-2 focus:ring-yellow-500 outline-none bg-white" placeholder="Ex: 400mg" />
+                          </div>
+                        </div>
+                      </div>
+
 
                       <div>
                         <label className="block text-xs font-bold text-stone-600 uppercase mb-1 flex items-center gap-2">
@@ -1794,61 +2053,7 @@ export default function App() {
             </div>
           )}
 
-          {/* --- ABA 5: CONFIGURAÇÕES DA LOJA --- */}
-          {adminTab === 'settings' && (
-            <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-200 max-w-2xl animate-fade-in">
-              <form 
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const formData = new FormData(e.target);
-                  setStoreSettings({
-                    storeName: formData.get('storeName'),
-                    heroTitle: formData.get('heroTitle'),
-                    heroSubtitle: formData.get('heroSubtitle'),
-                    deliveryFee: parseFloat(formData.get('deliveryFee')),
-                    whatsappNumber: formData.get('whatsappNumber')
-                  });
-                  triggerToast('Configurações da loja salvas!');
-                }}
-                className="space-y-4"
-              >
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Nome da Loja</label>
-                  <input required name="storeName" type="text" defaultValue={storeSettings.storeName} className="w-full p-3 text-sm border border-stone-300 rounded-xl outline-none focus:ring-2 focus:ring-yellow-500 bg-white" />
-                </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Título do Destaque (Hero)</label>
-                  <input required name="heroTitle" type="text" defaultValue={storeSettings.heroTitle} className="w-full p-3 text-sm border border-stone-300 rounded-xl outline-none focus:ring-2 focus:ring-yellow-500 bg-white" />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Subtítulo do Destaque (Hero)</label>
-                  <textarea required name="heroSubtitle" rows="2" defaultValue={storeSettings.heroSubtitle} className="w-full p-3 text-sm border border-stone-300 rounded-xl outline-none focus:ring-2 focus:ring-yellow-500 resize-none bg-white"></textarea>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Taxa de Entrega Padrão (R$)</label>
-                    <input required name="deliveryFee" type="number" step="0.01" defaultValue={storeSettings.deliveryFee} className="w-full p-3 text-sm border border-stone-300 rounded-xl outline-none focus:ring-2 focus:ring-yellow-500 bg-white" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-stone-600 uppercase mb-1">Número de WhatsApp (Com DDD, sem símbolos)</label>
-                    <input required name="whatsappNumber" type="text" defaultValue={storeSettings.whatsappNumber} className="w-full p-3 text-sm border border-stone-300 rounded-xl outline-none focus:ring-2 focus:ring-yellow-500 bg-white" placeholder="Ex: 5511999999999" />
-                  </div>
-                </div>
-
-                <div className="pt-6 border-t border-stone-150 flex justify-end">
-                  <button 
-                    type="submit"
-                    className="px-6 py-3 bg-yellow-400 text-white font-bold rounded-xl hover:bg-stone-900 transition-colors shadow-md text-sm"
-                  >
-                    Salvar Configurações
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
           </div>
         </main>
 
@@ -1907,7 +2112,7 @@ export default function App() {
   return (
     <>
       <style dangerouslySetInnerHTML={{__html: `
-        @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Lilita+One&display=swap');
         *, *::before, *::after { box-sizing: border-box; }
         body { background: #fff; }
         .hide-scrollbar::-webkit-scrollbar { display: none; }
@@ -1925,6 +2130,32 @@ export default function App() {
         @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
         @keyframes floatY { 0%,100% { transform: translateY(0px); } 50% { transform: translateY(-12px); } }
         @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes spin-reverse { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
+        .animate-spin-reverse { animation: spin-reverse 1.5s linear infinite; }
+        @keyframes logo-breathe {
+          0%, 100% { transform: scale(0.95); box-shadow: 0 8px 30px rgba(251,191,36,0.3); }
+          50% { transform: scale(1.03); box-shadow: 0 20px 50px rgba(251,191,36,0.55); }
+        }
+        .animate-logo-breathe { animation: logo-breathe 2.5s ease-in-out infinite; }
+        @keyframes loader-progress {
+          0% { left: -40%; }
+          100% { left: 100%; }
+        }
+        @keyframes particle-float-1 {
+          0%, 100% { transform: translateY(0) scale(0.8); opacity: 0.4; }
+          50% { transform: translateY(-12px) scale(1.2); opacity: 0.9; }
+        }
+        @keyframes particle-float-2 {
+          0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.6; }
+          50% { transform: translate(12px, -8px) scale(0.7); opacity: 0.3; }
+        }
+        @keyframes particle-float-3 {
+          0%, 100% { transform: translate(0, 0) scale(0.7); opacity: 0.3; }
+          50% { transform: translate(-10px, -12px) scale(1.1); opacity: 0.8; }
+        }
+        .animate-particle-1 { animation: particle-float-1 3s ease-in-out infinite; }
+        .animate-particle-2 { animation: particle-float-2 4s ease-in-out infinite; }
+        .animate-particle-3 { animation: particle-float-3 3.5s ease-in-out infinite; }
         @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
         @keyframes glowPulse { 0%,100% { box-shadow: 0 0 20px 4px rgba(234,179,8,0.25); } 50% { box-shadow: 0 0 40px 10px rgba(234,179,8,0.45); } }
 
@@ -2019,21 +2250,38 @@ export default function App() {
         }
 
         .cat-pill-active {
-          background: #0a0a0a;
-          color: #fff;
-          border-color: transparent;
-          box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+          background: #fbbf24 !important;
+          color: #0a0a0a !important;
+          border-color: #fbbf24 !important;
+          box-shadow: 0 8px 20px rgba(251,191,36,0.38) !important;
+          transform: translateY(-2px) scale(1.03) !important;
         }
         .cat-pill {
-          background: #fff;
-          color: #555;
-          border: 1.5px solid #e5e5e5;
-          transition: all 0.2s ease;
+          background: #fefce8;
+          color: #854d0e;
+          border: 2px solid #fde68a;
+          font-family: 'Lilita One', sans-serif;
+          font-weight: normal;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          font-size: 13.5px;
+          transition: all 0.25s cubic-bezier(0.16,1,0.3,1);
+          padding: 10px 20px !important;
+          border-radius: 9999px;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          box-shadow: 0 4px 10px rgba(251,191,36,0.06);
         }
         .cat-pill:hover:not(.cat-pill-active) {
-          background: #f5f5f5;
-          color: #0a0a0a;
-          border-color: #ccc;
+          background: #fef08a;
+          color: #78350f;
+          border-color: #fbbf24;
+          transform: translateY(-2px);
+          box-shadow: 0 6px 16px rgba(251,191,36,0.15);
+        }
+        .cat-pill:active {
+          transform: translateY(0) scale(0.96) !important;
         }
 
         .product-card {
@@ -2086,12 +2334,19 @@ export default function App() {
           background: #fbbf24;
           color: #0a0a0a;
           display: inline-block;
-          padding: 2px 10px;
-          font-weight: 900;
+          padding: 4px 12px;
+          font-family: 'Lilita One', sans-serif;
+          font-weight: normal;
           border-radius: 4px;
-          font-size: 10px;
-          letter-spacing: 0.08em;
+          font-size: 11px;
+          letter-spacing: 0.05em;
           text-transform: uppercase;
+        }
+
+        .font-display {
+          font-family: 'Lilita One', sans-serif !important;
+          font-weight: normal !important;
+          text-transform: uppercase !important;
         }
 
         .hero-pill {
@@ -2108,8 +2363,152 @@ export default function App() {
         .opacity-0-init { opacity: 0; }
       `}} />
       <div key={view} className="min-h-screen" style={{ background: '#fff', fontFamily: 'Bricolage Grotesque, sans-serif' }}>
-        {view === 'store' ? renderStorefront() : renderAdminPanel()}
+        {view === 'store' ? renderStorefront() : (isAdminLoggedIn ? renderAdminPanel() : <AdminLogin onLoginSuccess={() => { setIsAdminLoggedIn(true); sessionStorage.setItem('cleanfood_admin_logged', 'true'); }} onCancel={() => setView('store')} triggerToast={triggerToast} />)}
+
+        {/* Loading Overlay */}
+        {showLoader && (
+          <div 
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white transition-opacity duration-500 ease-out"
+            style={{ 
+              opacity: fadeLoader ? 0 : 1,
+              pointerEvents: fadeLoader ? 'none' : 'auto',
+              background: 'radial-gradient(circle at center, #fefce8 0%, #ffffff 70%)'
+            }}
+          >
+            {/* Subtle dot grid pattern on background */}
+            <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'radial-gradient(rgba(180,140,0,0.03) 1px, transparent 1px)', backgroundSize: '28px 28px' }} />
+            
+            {/* Main Logo & Loader */}
+            <div className="relative flex items-center justify-center w-56 h-56 md:w-80 md:h-80">
+              {/* Ambient decorative glowing particles */}
+              <div className="absolute -top-2 -left-2 w-2 h-2 bg-yellow-400 rounded-full animate-particle-1 shadow-[0_0_8px_#fbbf24]" />
+              <div className="absolute -bottom-4 right-8 w-2 h-2 bg-amber-400 rounded-full animate-particle-2 shadow-[0_0_8px_#fbbf24]" />
+              <div className="absolute top-12 -right-4 w-1.5 h-1.5 bg-yellow-500 rounded-full animate-particle-3 shadow-[0_0_6px_#fbbf24]" />
+              <div className="absolute bottom-16 -left-6 w-1.5 h-1.5 bg-amber-500 rounded-full animate-particle-1 shadow-[0_0_6px_#f59e0b]" />
+
+              {/* Outer dashed spinning gold track */}
+              <div className="absolute w-full h-full rounded-full border-[3px] border-dashed border-yellow-400/35 animate-spin-slow" />
+              
+              {/* Middle rotating brand yellow/orange gradient ring */}
+              <div className="absolute w-[90%] h-[90%] rounded-full border-[3px] border-transparent border-t-amber-500 border-r-amber-500 animate-spin" style={{ animationDuration: '1.1s' }} />
+              
+              {/* Inner counter-rotating yellow ring */}
+              <div className="absolute w-[80%] h-[80%] rounded-full border-[2.5px] border-transparent border-b-yellow-400 border-l-yellow-400 animate-spin-reverse" style={{ animationDuration: '1.5s' }} />
+              
+              {/* Breathing yellow/orange glowing background orb */}
+              <div className="absolute w-[70%] h-[70%] bg-gradient-to-tr from-amber-400/25 to-yellow-300/15 rounded-full blur-2xl animate-pulse" style={{ animationDuration: '2.5s' }} />
+              
+              {/* Circular Logo with brand border and breathing scale-up animation */}
+              <img 
+                src="/logo.jpg" 
+                alt="Clean Foods Logo" 
+                className="absolute w-[68%] h-[68%] rounded-full object-cover shadow-2xl border-[4px] border-yellow-400 animate-logo-breathe"
+                style={{ borderColor: '#fbbf24' }}
+              />
+            </div>
+
+            {/* Elegant, textless minimalistic horizontal progress bar */}
+            <div className="mt-10 flex flex-col items-center">
+              <div className="w-36 md:w-56 h-[3px] bg-stone-100 rounded-full overflow-hidden relative">
+                <div 
+                  className="absolute top-0 bottom-0 bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 rounded-full"
+                  style={{
+                    animation: 'loader-progress 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+                    width: '40%'
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
+  );
+}
+
+// --- COMPONENTE STANDALONE DE LOGIN DO ADMIN ---
+function AdminLogin({ onLoginSuccess, onCancel, triggerToast }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleLoginSubmit = (e) => {
+    e.preventDefault();
+    if (email === 'cleanfoods@sp.com' && password === 'naoseinao') {
+      onLoginSuccess();
+      triggerToast('Acesso autorizado! Bem-vindo.');
+      setError('');
+    } else {
+      setError('E-mail ou senha incorretos.');
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-stone-100 px-4 py-12 relative overflow-hidden" style={{ fontFamily: 'sans-serif' }}>
+      {/* Ambient decorative blobs */}
+      <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-yellow-100 blur-3xl opacity-60 pointer-events-none animate-float" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] rounded-full bg-yellow-100 blur-3xl opacity-50 pointer-events-none animate-float" style={{ animationDelay: '2s' }} />
+
+      <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-stone-200/80 relative z-10 space-y-6">
+        <div className="text-center space-y-2">
+          <img 
+            src="/logo.jpg" 
+            alt="Clean Foods Logo" 
+            className="w-16 h-16 rounded-full mx-auto object-cover border-2 border-yellow-400 shadow-md animate-logo-breathe"
+          />
+          <h2 className="text-2xl font-black text-stone-900 tracking-tight">Acesso Restrito</h2>
+          <p className="text-xs text-stone-500 font-medium">Painel de controle do restaurante</p>
+        </div>
+
+        <form onSubmit={handleLoginSubmit} className="space-y-4">
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-bold rounded-xl flex items-center gap-1.5">
+              <span className="shrink-0 flex h-2 w-2 rounded-full bg-red-500" />
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="block text-xxs font-black text-stone-400 uppercase tracking-wider">E-mail de Acesso</label>
+            <input 
+              required
+              type="email" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full p-3 text-sm rounded-xl outline-none border border-stone-200 focus:border-stone-900 bg-stone-50 transition-all font-semibold" 
+              placeholder="cleanfoods@sp.com" 
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-xxs font-black text-stone-400 uppercase tracking-wider">Senha Secreta</label>
+            <input 
+              required
+              type="password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full p-3 text-sm rounded-xl outline-none border border-stone-200 focus:border-stone-900 bg-stone-50 transition-all font-semibold" 
+              placeholder="Digite sua senha..." 
+            />
+          </div>
+
+          <div className="pt-2 flex flex-col gap-2">
+            <button 
+              type="submit" 
+              className="w-full py-3.5 bg-yellow-400 hover:bg-stone-900 text-white font-black rounded-xl text-sm transition-all shadow-md hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2"
+            >
+              Entrar no Painel
+            </button>
+            <button 
+              type="button"
+              onClick={onCancel}
+              className="w-full py-3 border border-stone-200 hover:bg-stone-50 text-stone-600 font-bold rounded-xl text-sm transition-colors text-center"
+            >
+              Voltar para a Loja
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
