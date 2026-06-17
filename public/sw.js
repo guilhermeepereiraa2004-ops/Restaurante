@@ -1,3 +1,5 @@
+importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
+
 // sw.js - Minimal Service Worker to enable PWA installability
 
 self.addEventListener('install', (e) => {
