@@ -501,43 +501,26 @@ export default function App() {
   };
 
   const sendOneSignalNotification = async ({ headings, contents, role, subscriptionIds }) => {
-    const appId = import.meta.env.VITE_ONESIGNAL_APP_ID;
-    const restApiKey = import.meta.env.VITE_ONESIGNAL_REST_API_KEY;
-    if (!appId) {
-      console.log("OneSignal: Notificações não disparadas porque a App ID não está configurada.");
-      return;
-    }
-
-    const payload = {
-      app_id: appId,
-      headings: { en: headings, pt: headings },
-      contents: { en: contents, pt: contents },
-    };
-
-    if (subscriptionIds && subscriptionIds.length > 0) {
-      payload.include_subscription_ids = subscriptionIds;
-    } else if (role) {
-      payload.filters = [
-        { field: "tag", key: "role", relation: "=", value: role }
-      ];
-    } else {
-      payload.included_segments = ["All"];
-    }
-
     try {
-      const headers = {
-        "Content-Type": "application/json",
-      };
-      if (restApiKey) {
-        headers["Authorization"] = `Basic ${restApiKey}`;
-      }
-      await fetch("https://onesignal.com/api/v1/notifications", {
+      const response = await fetch("/api/send-push", {
         method: "POST",
-        headers,
-        body: JSON.stringify(payload)
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          headings,
+          contents,
+          role,
+          subscriptionIds
+        })
       });
+
+      const data = await response.json();
+      if (!response.ok) {
+        console.error("Erro no proxy de push do OneSignal:", data.error || data);
+      }
     } catch (err) {
-      console.error("Erro ao enviar push notification via OneSignal:", err);
+      console.error("Erro ao enviar push notification via proxy:", err);
     }
   };
 
