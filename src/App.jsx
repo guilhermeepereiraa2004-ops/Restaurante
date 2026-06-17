@@ -2615,18 +2615,18 @@ export default function App() {
     });
 
     return (
-      <div className="min-h-screen bg-stone-100 text-stone-800 flex flex-col md:flex-row" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>
-        {/* Sidebar Lateral */}
-        <aside className="w-full md:w-64 bg-stone-900 text-stone-300 flex flex-col border-r border-stone-800 shrink-0">
+      <div className="min-h-screen bg-stone-100 text-stone-800 flex flex-row" style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}>
+        {/* Sidebar Lateral - Responsiva */}
+        <aside className="w-16 md:w-64 bg-stone-900 text-stone-300 flex flex-col border-r border-stone-800 shrink-0">
           {/* Cabeçalho da Sidebar */}
-          <div className="p-6 border-b border-stone-800 flex items-center justify-between">
+          <div className="p-4 md:p-6 border-b border-stone-800 flex items-center justify-center md:justify-between">
             <div className="flex items-center gap-3">
-              <ChefHat className="w-6 h-6 text-yellow-400 animate-pulse" />
-              <span className="text-lg font-bold text-white tracking-tight">Painel CleanFood</span>
+              <ChefHat className="w-6 h-6 text-yellow-400 animate-pulse shrink-0" />
+              <span className="text-lg font-bold text-white tracking-tight hidden md:inline">Painel CleanFood</span>
             </div>
             <button 
               onClick={() => setView('store')}
-              className="md:hidden p-1 hover:text-white"
+              className="hidden md:block p-1 hover:text-white"
               title="Voltar para Vitrine"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -2634,69 +2634,78 @@ export default function App() {
           </div>
 
           {/* Lista de Navegação */}
-          <nav className="flex-1 p-4 space-y-1.5">
+          <nav className="flex-1 p-2 md:p-4 space-y-1.5">
             <button 
               onClick={() => setAdminTab('dashboard')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
+              className={`w-full flex items-center justify-center md:justify-start gap-3 px-3 py-3 md:px-4 rounded-xl text-sm font-semibold transition-all duration-200 relative ${
                 adminTab === 'dashboard' 
                   ? 'bg-yellow-400 text-white shadow-md' 
                   : 'hover:bg-stone-800 hover:text-white'
               }`}
+              title="Geral (Dashboard)"
             >
-              <BarChart3 className="w-4 h-4" /> Geral (Dashboard)
+              <BarChart3 className="w-4 h-4 shrink-0" />
+              <span className="hidden md:inline">Geral (Dashboard)</span>
             </button>
             <button 
               onClick={() => setAdminTab('menu')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
+              className={`w-full flex items-center justify-center md:justify-start gap-3 px-3 py-3 md:px-4 rounded-xl text-sm font-semibold transition-all duration-200 relative ${
                 adminTab === 'menu' 
                   ? 'bg-yellow-400 text-white shadow-md' 
                   : 'hover:bg-stone-800 hover:text-white'
               }`}
+              title="Cardápio (Itens)"
             >
-              <Layers className="w-4 h-4" /> Cardápio (Itens)
+              <Layers className="w-4 h-4 shrink-0" />
+              <span className="hidden md:inline">Cardápio (Itens)</span>
             </button>
             <button 
               onClick={() => setAdminTab('orders')}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
+              className={`w-full flex items-center justify-center md:justify-between gap-3 px-3 py-3 md:px-4 rounded-xl text-sm font-semibold transition-all duration-200 relative ${
                 adminTab === 'orders' 
                   ? 'bg-yellow-400 text-white shadow-md' 
                   : 'hover:bg-stone-800 hover:text-white'
               }`}
+              title="Pedidos"
             >
-              <span className="flex items-center gap-3">
-                <ClipboardList className="w-4 h-4" /> Pedidos
+              <span className="flex items-center justify-center md:justify-start gap-3 w-full md:w-auto">
+                <ClipboardList className="w-4 h-4 shrink-0" />
+                <span className="hidden md:inline">Pedidos</span>
               </span>
               {orders.filter(o => o.status === 'Pendente').length > 0 && (
-                <span className="bg-amber-500 text-stone-900 text-xxs font-bold px-2 py-0.5 rounded-full animate-bounce">
+                <span className="absolute md:relative top-1 right-1 md:top-auto md:right-auto bg-amber-500 text-stone-900 text-[8px] md:text-xxs font-black px-1.5 py-0.5 rounded-full animate-bounce">
                   {orders.filter(o => o.status === 'Pendente').length}
                 </span>
               )}
             </button>
             <button 
               onClick={() => setAdminTab('categories')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
+              className={`w-full flex items-center justify-center md:justify-start gap-3 px-3 py-3 md:px-4 rounded-xl text-sm font-semibold transition-all duration-200 relative ${
                 adminTab === 'categories' 
                   ? 'bg-yellow-400 text-white shadow-md' 
                   : 'hover:bg-stone-800 hover:text-white'
               }`}
+              title="Categorias"
             >
-              <Tag className="w-4 h-4" /> Categorias
+              <Tag className="w-4 h-4 shrink-0" />
+              <span className="hidden md:inline">Categorias</span>
             </button>
             <button 
               onClick={() => setAdminTab('coupons')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${
+              className={`w-full flex items-center justify-center md:justify-start gap-3 px-3 py-3 md:px-4 rounded-xl text-sm font-semibold transition-all duration-200 relative ${
                 adminTab === 'coupons' 
                   ? 'bg-yellow-400 text-white shadow-md' 
                   : 'hover:bg-stone-800 hover:text-white'
               }`}
+              title="Cupons"
             >
-              <Ticket className="w-4 h-4" /> Cupons
+              <Ticket className="w-4 h-4 shrink-0" />
+              <span className="hidden md:inline">Cupons</span>
             </button>
-
           </nav>
 
           {/* Rodapé da Sidebar */}
-          <div className="p-4 border-t border-stone-800 bg-stone-950/40 space-y-2">
+          <div className="p-2 md:p-4 border-t border-stone-800 bg-stone-950/40 space-y-2">
             <button 
               onClick={() => {
                 setIsAdminLoggedIn(false);
@@ -2705,22 +2714,26 @@ export default function App() {
                 setView('store');
               }}
               className="w-full flex items-center justify-center gap-2 text-xs font-bold bg-stone-800 hover:bg-stone-750 text-rose-500 hover:text-rose-400 py-3 rounded-xl transition-colors"
+              title="Encerrar Sessão"
             >
-              <LogOut className="w-4 h-4" /> Encerrar Sessão
+              <LogOut className="w-4 h-4 shrink-0" />
+              <span className="hidden md:inline">Encerrar</span>
             </button>
             <button 
               onClick={() => setView('store')}
               className="w-full flex items-center justify-center gap-2 text-xs font-bold bg-stone-850 hover:bg-stone-800 text-yellow-400 hover:text-yellow-300 py-3 rounded-xl transition-colors"
+              title="Voltar para a Loja"
             >
-              <ArrowLeft className="w-4 h-4" /> Voltar para a Loja
+              <ArrowLeft className="w-4 h-4 shrink-0" />
+              <span className="hidden md:inline">Voltar</span>
             </button>
           </div>
         </aside>
 
         {/* Conteúdo Principal */}
-        <main className="flex-grow p-6 md:p-8 overflow-y-auto max-h-screen">
+        <main className="flex-grow p-4 md:p-8 overflow-y-auto max-h-screen">
           {/* Cabeçalho do Conteúdo */}
-          <header className="flex justify-between items-center mb-8 border-b border-stone-200 pb-4">
+          <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 md:mb-8 border-b border-stone-200 pb-4">
             <div>
               <span className="text-xs font-bold text-stone-500 uppercase tracking-widest">Área Admin</span>
               <h1 className="text-2xl md:text-3xl font-black text-stone-900 mt-1">
@@ -2737,7 +2750,7 @@ export default function App() {
                     Modo de Demonstração (Sem Supabase conectado)
                   </span>
                 ) : supabaseLoading ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-250 animate-pulse">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-55 text-amber-700 border border-amber-250 animate-pulse">
                     <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                     Conectando ao Supabase...
                   </span>
