@@ -1,0 +1,24 @@
+{
+  "short_name": "Clean Foods",
+  "name": "Clean Foods São Paulo",
+  "description": "Comida saudável de verdade. Marmitas artesanais, salgados e doces proteicos.",
+  "icons": [
+    {
+      "src": "/logo.jpg",
+      "type": "image/jpeg",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#facc15"
+}
