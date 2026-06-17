@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ShoppingBag, 
   ChefHat, 
@@ -406,152 +406,176 @@ export default function App() {
   const [fadeLoader, setFadeLoader] = useState(false);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => sessionStorage.getItem('cleanfood_admin_logged') === 'true');
   const [isSupabaseConnected, setIsSupabaseConnected] = useState(false);
+  const [isSupabaseAuthenticated, setIsSupabaseAuthenticated] = useState(false);
   const [supabaseLoading, setSupabaseLoading] = useState(isSupabaseConfigured);
 
-  useEffect(() => {
-    async function loadDataFromSupabase() {
-      if (!isSupabaseConfigured) {
-        setSupabaseLoading(false);
-        return;
-      }
-      try {
-        // 1. Configurações
-        const { data: dbSettings, error: settingsError } = await supabase
+  const loadDataFromSupabase = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setSupabaseLoading(false);
+      return;
+    }
+    setSupabaseLoading(true);
+    try {
+      // 1. Configurações
+      const { data: dbSettings, error: settingsError } = await supabase
+        .from('store_settings')
+        .select('*')
+        .maybeSingle();
+
+      if (settingsError) throw settingsError;
+
+      if (!dbSettings) {
+        const defaultSettings = {
+          id: 1,
+          storeName: STORE_INFO.name,
+          heroTitle: 'Comida de verdade, feita para você.',
+          heroSubtitle: 'Marmitas artesanais, salgados e doces proteicos feitos com ingredientes selecionados. Peça agora e receba no conforto da sua casa em São Paulo.',
+          deliveryFee: STORE_INFO.deliveryFee,
+          whatsappNumber: STORE_INFO.whatsapp
+        };
+        const { error: seedSettingsErr } = await supabase
           .from('store_settings')
-          .select('*')
-          .maybeSingle();
+          .insert([defaultSettings]);
+        if (seedSettingsErr) console.error('Erro ao semear configurações no Supabase:', seedSettingsErr);
+        setStoreSettings(defaultSettings);
+      } else {
+        setStoreSettings(dbSettings);
+      }
 
-        if (settingsError) throw settingsError;
+      // 2. Categorias (Sequencial para respeitar foreign key nos produtos)
+      const { data: dbCategories, error: catError } = await supabase
+        .from('categories')
+        .select('*')
+        .order('name', { ascending: true });
 
-        if (!dbSettings) {
-          const defaultSettings = {
-            id: 1,
-            storeName: STORE_INFO.name,
-            heroTitle: 'Comida de verdade, feita para você.',
-            heroSubtitle: 'Marmitas artesanais, salgados e doces proteicos feitos com ingredientes selecionados. Peça agora e receba no conforto da sua casa em São Paulo.',
-            deliveryFee: STORE_INFO.deliveryFee,
-            whatsappNumber: STORE_INFO.whatsapp
-          };
-          const { error: seedSettingsErr } = await supabase
-            .from('store_settings')
-            .insert([defaultSettings]);
-          if (seedSettingsErr) console.error('Erro ao semear configurações no Supabase:', seedSettingsErr);
-          setStoreSettings(defaultSettings);
-        } else {
-          setStoreSettings(dbSettings);
-        }
+      if (catError) throw catError;
 
-        // 2. Categorias (Sequencial para respeitar foreign key nos produtos)
-        const { data: dbCategories, error: catError } = await supabase
+      if (!dbCategories || dbCategories.length === 0) {
+        const defaultCategories = ['Frango', 'Patinho', 'Gourmet', 'Salgados & Doces', 'Promoções'];
+        const catInserts = defaultCategories.map(cat => ({ name: cat }));
+        const { error: seedCatErr } = await supabase
           .from('categories')
-          .select('*')
-          .order('name', { ascending: true });
+          .insert(catInserts);
+        if (seedCatErr) console.error('Erro ao semear categorias no Supabase:', seedCatErr);
+        setCategories(defaultCategories);
+      } else {
+        setCategories(dbCategories.map(c => c.name));
+      }
 
-        if (catError) throw catError;
+      // 3. Produtos
+      const { data: dbProducts, error: prodError } = await supabase
+        .from('products')
+        .select('*')
+        .order('id', { ascending: true });
 
-        if (!dbCategories || dbCategories.length === 0) {
-          const defaultCategories = ['Frango', 'Patinho', 'Gourmet', 'Salgados & Doces', 'Promoções'];
-          const catInserts = defaultCategories.map(cat => ({ name: cat }));
-          const { error: seedCatErr } = await supabase
-            .from('categories')
-            .insert(catInserts);
-          if (seedCatErr) console.error('Erro ao semear categorias no Supabase:', seedCatErr);
-          setCategories(defaultCategories);
-        } else {
-          setCategories(dbCategories.map(c => c.name));
-        }
+      if (prodError) throw prodError;
 
-        // 3. Produtos
-        const { data: dbProducts, error: prodError } = await supabase
+      if (!dbProducts || dbProducts.length === 0) {
+        const prodInserts = INITIAL_PRODUCTS.map(p => ({
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          price: p.price,
+          promoPrice: p.promoPrice || null,
+          category: p.category,
+          image: p.image,
+          available: p.available ?? true,
+          chefTip: p.chefTip ?? false,
+          ingredients: p.ingredients || '',
+          calories: p.calories || '',
+          carbs: p.carbs || '',
+          proteins: p.proteins || '',
+          totalFats: p.totalFats || '',
+          saturatedFats: p.saturatedFats || '',
+          transFats: p.transFats || '',
+          fiber: p.fiber || '',
+          sodium: p.sodium || '',
+          pricedByGrams: p.pricedByGrams ?? false,
+          weightBasis: p.weightBasis || 100,
+          weightOptions: p.weightOptions || []
+        }));
+
+        const { error: seedProdErr } = await supabase
           .from('products')
-          .select('*')
-          .order('id', { ascending: true });
+          .insert(prodInserts);
+        if (seedProdErr) console.error('Erro ao semear produtos no Supabase:', seedProdErr);
+        setProducts(INITIAL_PRODUCTS);
+      } else {
+        setProducts(dbProducts);
+      }
 
-        if (prodError) throw prodError;
+      // 4. Cupons
+      const { data: dbCoupons, error: coupError } = await supabase
+        .from('coupons')
+        .select('*')
+        .order('id', { ascending: true });
 
-        if (!dbProducts || dbProducts.length === 0) {
-          const prodInserts = INITIAL_PRODUCTS.map(p => ({
-            id: p.id,
-            name: p.name,
-            description: p.description,
-            price: p.price,
-            promoPrice: p.promoPrice || null,
-            category: p.category,
-            image: p.image,
-            available: p.available ?? true,
-            chefTip: p.chefTip ?? false,
-            ingredients: p.ingredients || '',
-            calories: p.calories || '',
-            carbs: p.carbs || '',
-            proteins: p.proteins || '',
-            totalFats: p.totalFats || '',
-            saturatedFats: p.saturatedFats || '',
-            transFats: p.transFats || '',
-            fiber: p.fiber || '',
-            sodium: p.sodium || '',
-            pricedByGrams: p.pricedByGrams ?? false,
-            weightBasis: p.weightBasis || 100,
-            weightOptions: p.weightOptions || []
-          }));
+      if (coupError) throw coupError;
 
-          const { error: seedProdErr } = await supabase
-            .from('products')
-            .insert(prodInserts);
-          if (seedProdErr) console.error('Erro ao semear produtos no Supabase:', seedProdErr);
-          setProducts(INITIAL_PRODUCTS);
-        } else {
-          setProducts(dbProducts);
-        }
-
-        // 4. Cupons
-        const { data: dbCoupons, error: coupError } = await supabase
+      if (!dbCoupons || dbCoupons.length === 0) {
+        const defaultCoupons = [
+          {
+            id: 1,
+            code: 'PRIMEIRACOMPRA',
+            description: '10% de desconto na primeira compra',
+            percentage: 10,
+            scope: 'all',
+            productIds: [],
+            active: true,
+            weekdays: [0, 1, 2, 3, 4, 5, 6]
+          }
+        ];
+        const { error: seedCoupErr } = await supabase
           .from('coupons')
-          .select('*')
-          .order('id', { ascending: true });
+          .insert(defaultCoupons);
+        if (seedCoupErr) console.error('Erro ao semear cupons no Supabase:', seedCoupErr);
+        setCoupons(defaultCoupons);
+      } else {
+        setCoupons(dbCoupons);
+      }
 
-        if (coupError) throw coupError;
-
-        if (!dbCoupons || dbCoupons.length === 0) {
-          const defaultCoupons = [
-            {
-              id: 1,
-              code: 'PRIMEIRACOMPRA',
-              description: '10% de desconto na primeira compra',
-              percentage: 10,
-              scope: 'all',
-              productIds: [],
-              active: true,
-              weekdays: [0, 1, 2, 3, 4, 5, 6]
-            }
-          ];
-          const { error: seedCoupErr } = await supabase
-            .from('coupons')
-            .insert(defaultCoupons);
-          if (seedCoupErr) console.error('Erro ao semear cupons no Supabase:', seedCoupErr);
-          setCoupons(defaultCoupons);
-        } else {
-          setCoupons(dbCoupons);
-        }
-
-        // 5. Pedidos
+      // 5. Pedidos (Apenas se estiver autenticado no Supabase para evitar erros de RLS)
+      const { data: sessionData } = await supabase.auth.getSession();
+      const hasSession = !!sessionData?.session;
+      setIsSupabaseAuthenticated(hasSession);
+      if (hasSession) {
         const { data: dbOrders, error: ordersError } = await supabase
           .from('orders')
           .select('*')
           .order('date', { ascending: false });
 
-        if (ordersError) throw ordersError;
-        setOrders(dbOrders || []);
-
-        setIsSupabaseConnected(true);
-      } catch (err) {
-        console.error('Erro ao conectar ou carregar dados do Supabase:', err);
-      } finally {
-        setSupabaseLoading(false);
+        if (ordersError) console.error('Erro ao buscar pedidos no Supabase:', ordersError);
+        else setOrders(dbOrders || []);
       }
-    }
 
-    loadDataFromSupabase();
+      setIsSupabaseConnected(true);
+    } catch (err) {
+      console.error('Erro ao conectar ou carregar dados do Supabase:', err);
+    } finally {
+      setSupabaseLoading(false);
+    }
   }, []);
+
+  // Carregar dados na montagem do componente
+  useEffect(() => {
+    loadDataFromSupabase();
+  }, [loadDataFromSupabase]);
+
+  // Listener para carregar/semeiar dados sempre que o usuário fizer login
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setIsSupabaseAuthenticated(!!session);
+      if (event === 'SIGNED_IN') {
+        loadDataFromSupabase();
+      }
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, [loadDataFromSupabase]);
 
   useEffect(() => {
     if (!supabaseLoading) {
@@ -2553,10 +2577,18 @@ export default function App() {
                     Conectando ao Supabase...
                   </span>
                 ) : isSupabaseConnected ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-750 border border-emerald-250">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    Supabase Conectado
-                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-750 border border-emerald-250">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      Supabase Conectado
+                    </span>
+                    {!isSupabaseAuthenticated && isAdminLoggedIn && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-55 text-amber-850 border border-amber-250">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        ⚠️ Modo Fallback Local (Sem Autenticação Supabase - As alterações não salvarão no banco)
+                      </span>
+                    )}
+                  </div>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-750 border border-rose-250">
                     <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
